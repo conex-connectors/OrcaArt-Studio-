@@ -1,0 +1,15 @@
+workflows:
+  android-apk:
+    name: OrcaArt Android APK
+    max_build_duration: 60
+    environment:
+      flutter: stable
+    scripts:
+      - name: Create Android platform files
+        script: flutter create . --platforms=android --project-name orca_art_ai_studio --org com.orcaart
+      - name: Get packages
+        script: flutter pub get
+      - name: Build APK
+        script: flutter build apk --release
+    artifacts:
+      - build/**/outputs/**/*.apk

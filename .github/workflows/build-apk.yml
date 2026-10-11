@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  issues: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,10 +19,25 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Create Android platform files
-        run: flutter create . --platforms=android --project-name orca_art_ai_studio --org com.orcaart
-      - run: flutter pub get
-      - run: flutter build apk --release
+      - name: Build APK
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            flutter create . --platforms=android --project-name orca_art_ai_studio --org com.orcaart
+            python3 - <<'PY'
+          p = 'android/app/src/main/AndroidManifest.xml'
+          s = open(p).read()
+          perm = '<uses-permission android:name="android.permission.INTERNET"/>'
+          if perm not in s:
+              i = s.index('>', s.index('<manifest')) + 1
+              s = s[:i] + '\n    ' + perm + s[i:]
+          open(p, 'w').write(s)
+          PY
+            grep -n INTERNET android/app/src/main/AndroidManifest.xml
+            flutter pub get
+            flutter build apk --release
+          } 2>&1 | tee build.log
       - uses: actions/upload-artifact@v4
         with:
           name: orcaart-apk
@@ -31,3 +47,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "build-${{ github.run_number }}" build/app/outputs/flutter-apk/app-release.apk --title "OrcaArt build ${{ github.run_number }}" --notes "Auto-built from ${{ github.sha }}"
+      - name: Report failure as an issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Commit ${{ github.sha }}"
+            echo
+            echo '```'
+            tail -n 100 build.log 2>/dev/null || echo "no build log"
+            echo '```'
+          } > issue.md
+          gh issue create --title "Build #${{ github.run_number }} failed" --body-file issue.md
